@@ -1,0 +1,304 @@
+/* 防止滾動穿透 */
+html,
+body {
+  height: 100vh;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Noto Sans TC", sans-serif;
+}
+
+#mobile-container {
+  height: 100vh;
+}
+@media (min-width: 768px) {
+  #mobile-container {
+    height: 90vh;
+    max-height: 896px;
+    margin-top: 5vh;
+    margin-bottom: 5vh;
+    border-radius: 1.5rem;
+  }
+}
+
+#loading-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+[v-cloak] {
+  display: none;
+}
+
+/* Transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease-out;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+.modal-pop-enter-active {
+  transition: all 0.3s ease-out;
+}
+.modal-pop-leave-active {
+  transition: all 0.2s ease-in;
+}
+.modal-pop-enter-from,
+.modal-pop-leave-to {
+  transform: scale(0.95) translateY(20px);
+  opacity: 0;
+}
+
+/* List transition */
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.5s cubic-bezier(0.55, 0, 0.1, 1);
+}
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/* ---------------------------
+   CustomSelect 樣式統一
+   --------------------------- */
+.custom-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+.custom-select-display {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  background-color: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: box-shadow 0.2s, border-color 0.2s;
+  min-height: 50px;
+  user-select: none;
+}
+.custom-select-display:focus {
+  outline: none !important;
+  border-color: #0d9488 !important;
+  box-shadow: inset 0 0 0 1px #0d9488 !important;
+}
+.custom-select-display.is-open {
+  border-color: #0d9488 !important;
+  box-shadow: inset 0 0 0 1px #0d9488 !important;
+}
+.custom-select-display.placeholder {
+  color: #94a3b8;
+}
+.custom-select-arrow {
+  margin-left: auto;
+  color: #94a3b8;
+  transition: transform 0.3s ease;
+}
+.custom-select-arrow.is-open {
+  transform: rotate(180deg);
+}
+.custom-select-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  width: 100%;
+  background-color: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 50;
+  padding: 0.25rem 0;
+  margin-top: -1px;
+}
+.custom-select-option {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.custom-select-option:hover {
+  background-color: #f1f5f9;
+}
+.dropdown-fade-enter-active,
+.dropdown-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.dropdown-fade-enter-from,
+.dropdown-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+/* 智慧高亮樣式 */
+.cell-highlighted {
+  box-shadow: inset 0 0 0 2px #38bdf8;
+  z-index: 5;
+}
+.cell-highlighted-rose {
+  box-shadow: inset 0 0 0 2px #f43f5e;
+}
+.cell-highlighted-sky {
+  box-shadow: inset 0 0 0 2px #0ea5e9;
+}
+.cell-highlighted-teal {
+  box-shadow: inset 0 0 0 2px #14b8a6;
+}
+.cell-highlighted-indigo {
+  box-shadow: inset 0 0 0 2px #6366f1;
+}
+.cell-highlighted-purple {
+  box-shadow: inset 0 0 0 2px #a855f7;
+}
+
+/* Quick Edit */
+.cell-source {
+  box-shadow: inset 0 0 0 4px #3b82f6 !important;
+  transform: scale(1.05);
+  z-index: 10;
+}
+.cell-selectable {
+  cursor: pointer;
+  box-shadow: inset 0 0 0 2px rgba(16, 185, 129, 0.5);
+}
+@keyframes pulse-green {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 2px rgba(16, 185, 129, 0.7);
+  }
+  50% {
+    box-shadow: inset 0 0 0 4px rgba(16, 185, 129, 1);
+  }
+}
+.cell-target-available {
+  animation: pulse-green 2s infinite;
+  cursor: pointer;
+  z-index: 5;
+}
+.cell-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(255, 255, 255, 0.5) 4px,
+    rgba(255, 255, 255, 0.5) 8px
+  );
+}
+
+/* Overtime ribbon 樣式 */
+.overtime-ribbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1.125rem;
+  background: #334155;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  border-top-left-radius: 0.375rem;
+  border-top-right-radius: 0.375rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+  pointer-events: none;
+}
+.overtime-ribbon i {
+  margin-right: 4px;
+  font-size: 9px;
+}
+
+/* ---------------------------
+   統一全站聚焦樣式
+   --------------------------- */
+input,
+textarea,
+select {
+  border: 1px solid rgb(203 213 225);
+  border-radius: 0.5rem;
+  background-color: #fff;
+  padding: 0.75rem 0.75rem;
+  transition: all 0.15s ease-in-out;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  border-color: rgb(13 148 136) !important;
+  box-shadow: inset 0 0 0 1px rgb(13 148 136) !important;
+}
+input[type="date"]:focus {
+  outline: none !important;
+  border-color: rgb(13 148 136) !important;
+  box-shadow: inset 0 0 0 1px rgb(13 148 136) !important;
+}
+.modal-container input:focus,
+.modal-container select:focus,
+.modal-container textarea:focus {
+  border-color: rgb(13 148 136) !important;
+  box-shadow: inset 0 0 0 1px rgb(13 148 136) !important;
+  outline: none !important;
+}
+
+/* 移除所有按鈕預設黑框 */
+button:focus,
+button:focus-visible {
+  outline: none !important;
+}
+
+/* 按鈕 focus-visible 陰影 */
+button:focus-visible {
+  box-shadow: inset 0 0 0 1px rgb(13 148 136),
+    0 0 0 2px rgba(13, 148, 136, 0.25);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgb(203 213 225);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(148 163 184);
+}
+
+/* Fade animation for dropdown */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.custom-select-menu {
+  animation: fadeIn 0.15s ease-out;
+}

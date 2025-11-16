@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <style>
+      [v-cloak] {
+        display: none !important;
+      }
+    </style>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <base target="_top" />
+    <title>夥班 Huoban</title>
+    <meta name="theme-color" content="#0d9488" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="./icons/icon-192x192.png" />
+
+    <!-- 載入由 Vercel 動態生成的 env.js -->
+    <!-- 在本地開發時，這個請求會 404，但會被後面的本地設定檔覆蓋 -->
+    <script src="/env.js"></script>
+
+    <!-- 在本地開發時，載入本地設定檔 -->
+    <script>
+      if (
+        !window.location.hostname.includes("netlify.app") &&
+        !window.location.hostname.includes("vercel.app")
+      ) {
+        document.write('<script src="./firebase-config.local.js"><\/script>');
+      }
+    </script>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet" href="./font-awesome/css/all.min.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body class="bg-slate-200 font-sans">
+    <div
+      id="mobile-container"
+      class="relative bg-slate-100 text-slate-800 w-full max-w-md mx-auto h-screen shadow-2xl overflow-hidden"
+    >
+      <div id="app" class="h-full flex flex-col" v-cloak>
+        <!-- 全局 Loading 覆蓋層 -->
+        <div
+          id="loading-overlay"
+          v-if="isAppLoading"
+          class="absolute inset-0 bg-white/60 flex items-center justify-center z-50"
+        >
+          <i class="fa-solid fa-spinner fa-spin fa-3x text-teal-600"></i>
+        </div>
+
+        <!-- 只有在 Firebase Auth 初始化完成後，才開始渲染內部內容 -->
+        <template v-if="!auth.isInitializing.value">
+          <!-- 狀況一：使用者已登入 -->
+          <template v-if="auth.user.value">
+            <!-- 並且所有業務資料已載入完成 -->
+            <template v-if="isDataInitialized">
+              <!-- 主視圖區 -->
+              <main class="flex-1 overflow-y-auto">
+                <div class="p-6 h-full">
+                  <transition name="fade" mode="out-in">
+                    <component :is="activeViewComponent" :key="activeView" />
+                  </transition>
+                </div>
+              </main>
+
+              <!-- 底部導覽列 -->
+              <nav
+                class="w-full bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex justify-around shrink-0 px-2 py-3"
+              >
+                <button
+                  @click="navigateTo('dashboard')"
+                  :class="navButtonClass('dashboard')"
+                >
+                  <i class="fa-solid fa-calendar-days"></i
+                  ><span class="text-xs mt-1">總覽</span>
+                </button>
+                <button
+                  @click="navigateTo('events')"
+                  :class="navButtonClass('events')"
+                >
+                  <i class="fa-solid fa-bolt"></i
+                  ><span class="text-xs mt-1">事件</span>
+                </button>
+                <button
+                  @click="navigateTo('quotas')"
+                  :class="navButtonClass('quotas')"
+                >
+                  <i class="fa-solid fa-chart-pie"></i
+                  ><span class="text-xs mt-1">假別</span>
+                </button>
+                <button
+                  @click="navigateTo('members')"
+                  :class="navButtonClass('members')"
+                >
+                  <i class="fa-solid fa-users"></i
+                  ><span class="text-xs mt-1">成員</span>
+                </button>
+                <button
+                  @click="navigateTo('inventory')"
+                  :class="navButtonClass('inventory')"
+                >
+                  <i class="fa-solid fa-boxes-stacked"></i
+                  ><span class="text-xs mt-1">庫存</span>
+                </button>
+              </nav>
+            </template>
+          </template>
+
+          <!-- 狀況二：使用者未登入 -->
+          <login-view v-else />
+        </template>
+
+        <!-- 所有 Modal 透過 Teleport 掛載於此，其顯示與否由各自的 v-model 控制 -->
+        <!-- 使用 v-if="isDataInitialized" 確保 Modal 在資料準備好後才被渲染，避免內部綁定錯誤 -->
+        <template v-if="isDataInitialized">
+          <!-- Modal：新增成員 -->
+          <base-modal v-model="showAddMemberModal" title="新增成員">
+            <form
+              @submit.prevent="membersData.handleAddMember"
+              class="space-y-4"
+            >
+              <input
+                type="text"
+                v-model.trim="membersData.newMember.name"
+                placeholder="姓名"
+                class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                required
+              />
+              <custom-select
+                v-model="membersData.newMember.title"
+                :options="membersData.titleOptions.value"
+                placeholder="選擇職稱"
+                icon-class="fa-solid fa-user-tie fa-fw"
+              ></custom-select>
+              <input
+                v-if="membersData.newMember.title === '新職稱'"
+                type="text"
+                v-model.trim="membersData.newTitleName.value"
+                placeholder="請輸入新職稱名稱"
+                class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                required
+              />
+              <custom-select
+                v-model="membersData.newMember.team"
+                :options="membersData.teamOptions.value"
+                placeholder="選擇班別"
+                icon-class="fa-solid fa-users-gear fa-fw"
+              ></custom-select>
+              <input
+                v-if="membersData.newMember.team === '新班別'"
+                type="text"
+                v-model.trim="membersData.newTeamName.value"
+                placeholder="請輸入新班別名稱"
+                class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                required
+              />
+            </form>
+            <template #footer>
+              <div class="flex justify-end space-x-3">
+                <button
+                  @click="showAddMemberModal = false"
+                  type="button"
+                  class="bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  @click="membersData.handleAddMember"
+                  type="button"
+                  class="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 text-sm"
+                >
+                  確認新增
+                </button>
+              </div>
+            </template>
+          </base-modal>
+
+          <!-- Modal：修改成員資料 -->
+          <base-modal v-model="showEditMemberModal" title="修改成員資料">
+            <form
+              v-if="membersData.editingMember.value"
+              @submit.prevent="membersData.handleUpdateMember"
+              class="space-y-4"
+            >
+              <input
+                type="text"
+                v-model.trim="membersData.editingMember.value.name"
+                placeholder="姓名"
+                class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                required
+              />
+              <custom-select
+                v-model="membersData.editingMember.value.title"
+                :options="membersData.titleOptions.value"
+                placeholder="選擇職稱"
+                icon-class="fa-solid fa-user-tie fa-fw"
+              ></custom-select>
+              <custom-select
+                v-model="membersData.editingMember.value.team"
+                :options="membersData.teamOptions.value"
+                placeholder="選擇班別"
+                icon-class="fa-solid fa-users-gear fa-fw"
+              ></custom-select>
+            </form>
+            <template #footer>
+              <div class="flex justify-end space-x-3">
+                <button
+                  @click="showEditMemberModal = false"
+                  type="button"
+                  class="bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  @click="membersData.handleUpdateMember"
+                  type="button"
+                  class="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 text-sm"
+                >
+                  確認修改
+                </button>
+              </div>
+            </template>
+          </base-modal>
+
+          <!-- Modal：新增差勤事件 -->
+          <base-modal v-model="showAddEventModal" title="新增差勤事件">
+            <div class="space-y-4 max-h-[60vh] overflow-y-auto">
+              <custom-date-picker
+                v-model="eventsData.newEvent.date"
+              ></custom-date-picker>
+              <custom-select
+                v-model="eventsData.newEvent.memberId"
+                :options="eventsData.memberOptionsForFilter.value"
+                placeholder="選擇成員"
+                icon-class="fa-solid fa-user fa-fw"
+              ></custom-select>
+              <custom-select
+                v-model="eventsData.newEvent.eventType"
+                :options="eventsData.eventTypeOptionsForFilter.value"
+                placeholder="選擇事件類型"
+                icon-class="fa-solid fa-tag fa-fw"
+              ></custom-select>
+              <input
+                v-if="eventsData.newEvent.eventType === '加班'"
+                type="number"
+                v-model.number="eventsData.newEvent.hours"
+                placeholder="加班時數"
+                class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+              />
+              <div
+                v-if="eventsData.newEvent.eventType === '請假'"
+                class="space-y-4"
+              >
+                <custom-select
+                  v-model="eventsData.newEvent.reason"
+                  :options="eventsData.leaveTypeOptions.value"
+                  placeholder="選擇假別"
+                  icon-class="fa-solid fa-clipboard fa-fw"
+                ></custom-select>
+                <textarea
+                  v-if="eventsData.newEvent.reason === '事假'"
+                  v-model.trim="eventsData.newEvent.description"
+                  placeholder="請輸入事由（選填）"
+                  class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  rows="2"
+                ></textarea>
+                <input
+                  v-if="eventsData.isHourlyLeave.value"
+                  type="number"
+                  v-model.number="eventsData.newEvent.hours"
+                  placeholder="請假時數"
+                  class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div v-if="eventsData.newEvent.eventType === '代班'">
+                <div class="flex items-center gap-4 my-2">
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      :value="false"
+                      v-model="eventsData.newEvent.isExternalSubstitute"
+                      class="form-radio text-teal-600"
+                    />
+                    內部成員</label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      :value="true"
+                      v-model="eventsData.newEvent.isExternalSubstitute"
+                      class="form-radio text-teal-600"
+                    />
+                    外部人員</label
+                  >
+                </div>
+                <custom-select
+                  v-if="!eventsData.newEvent.isExternalSubstitute"
+                  v-model="eventsData.newEvent.relatedMemberId"
+                  :options="eventsData.memberOptionsForFilter.value"
+                  placeholder="選擇內部代班成員"
+                  icon-class="fa-solid fa-users fa-fw"
+                ></custom-select>
+                <input
+                  v-else
+                  type="text"
+                  v-model.trim="eventsData.newEvent.externalSubstituteName"
+                  placeholder="輸入外部人員姓名"
+                  class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <custom-select
+                v-if="eventsData.newEvent.eventType === '調班'"
+                v-model="eventsData.newEvent.relatedMemberId"
+                :options="eventsData.memberOptionsForFilter.value"
+                placeholder="選擇交換對象"
+                icon-class="fa-solid fa-users fa-fw"
+              ></custom-select>
+              <custom-date-picker
+                v-if="['調班', '調假'].includes(eventsData.newEvent.eventType)"
+                v-model="eventsData.newEvent.relatedDate"
+              ></custom-date-picker>
+            </div>
+            <template #footer>
+              <div class="flex justify-end space-x-3">
+                <button
+                  @click="showAddEventModal = false"
+                  type="button"
+                  class="bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  @click="eventsData.handleAddEvent"
+                  type="button"
+                  class="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 text-sm"
+                >
+                  確認新增
+                </button>
+              </div>
+            </template>
+          </base-modal>
+
+          <!-- Modal：修改差勤事件 -->
+          <base-modal
+            v-model="eventsData.showEditEventModal.value"
+            title="修改差勤事件"
+          >
+            <div
+              v-if="eventsData.editingEvent.value"
+              class="space-y-4 max-h-[60vh] overflow-y-auto"
+            >
+              <custom-date-picker
+                v-model="eventsData.editingEvent.value.date"
+              ></custom-date-picker>
+              <custom-select
+                v-model="eventsData.editingEvent.value.memberId"
+                :options="eventsData.memberOptionsForFilter.value"
+                placeholder="選擇成員"
+                icon-class="fa-solid fa-user fa-fw"
+              ></custom-select>
+              <custom-select
+                v-model="eventsData.editingEvent.value.eventType"
+                :options="eventsData.eventTypeOptionsForFilter.value"
+                placeholder="選擇事件類型"
+                icon-class="fa-solid fa-tag fa-fw"
+              ></custom-select>
+              <input
+                v-if="eventsData.editingEvent.value.eventType === '加班'"
+                type="number"
+                v-model.number="eventsData.editingEvent.value.hours"
+                placeholder="加班時數"
+                class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+              />
+              <div
+                v-if="eventsData.editingEvent.value.eventType === '請假'"
+                class="space-y-4"
+              >
+                <custom-select
+                  v-model="eventsData.editingEvent.value.reason"
+                  :options="eventsData.leaveTypeOptions.value"
+                  placeholder="選擇假別"
+                  icon-class="fa-solid fa-clipboard fa-fw"
+                ></custom-select>
+                <textarea
+                  v-if="eventsData.editingEvent.value.reason === '事假'"
+                  v-model.trim="eventsData.editingEvent.value.description"
+                  placeholder="請輸入事由（選填）"
+                  class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  rows="2"
+                ></textarea>
+                <input
+                  v-if="eventsData.isHourlyLeave.value"
+                  type="number"
+                  v-model.number="eventsData.editingEvent.value.hours"
+                  placeholder="請假時數"
+                  class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div v-if="eventsData.editingEvent.value.eventType === '代班'">
+                <div class="flex items-center gap-4 my-2">
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      :value="false"
+                      v-model="eventsData.editingEvent.value.isExternalSubstitute"
+                      class="form-radio text-teal-600"
+                    />
+                    內部成員</label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      :value="true"
+                      v-model="eventsData.editingEvent.value.isExternalSubstitute"
+                      class="form-radio text-teal-600"
+                    />
+                    外部人員</label
+                  >
+                </div>
+                <custom-select
+                  v-if="!eventsData.editingEvent.value.isExternalSubstitute"
+                  v-model="eventsData.editingEvent.value.relatedMemberId"
+                  :options="eventsData.memberOptionsForFilter.value"
+                  placeholder="選擇內部代班成員"
+                  icon-class="fa-solid fa-users fa-fw"
+                ></custom-select>
+                <input
+                  v-else
+                  type="text"
+                  v-model.trim="eventsData.editingEvent.value.externalSubstituteName"
+                  placeholder="輸入外部人員姓名"
+                  class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <custom-select
+                v-if="eventsData.editingEvent.value.eventType === '調班'"
+                v-model="eventsData.editingEvent.value.relatedMemberId"
+                :options="eventsData.memberOptionsForFilter.value"
+                placeholder="選擇交換對象"
+                icon-class="fa-solid fa-users fa-fw"
+              ></custom-select>
+              <custom-date-picker
+                v-if="['調班', '調假'].includes(eventsData.editingEvent.value.eventType)"
+                v-model="eventsData.editingEvent.value.relatedDate"
+              ></custom-date-picker>
+            </div>
+            <template #footer>
+              <div class="flex justify-end space-x-3">
+                <button
+                  @click="eventsData.showEditEventModal.value = false"
+                  type="button"
+                  class="bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  @click="eventsData.handleUpdateEvent"
+                  type="button"
+                  class="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 text-sm"
+                >
+                  確認修改
+                </button>
+              </div>
+            </template>
+          </base-modal>
+
+          <!-- Modal：確認差勤（Quick Edit 流程） -->
+          <base-modal v-model="showQuickEditModal" title="確認差勤事件">
+            <div class="space-y-4">
+              <p>
+                <span class="font-semibold text-slate-500 w-24 inline-block"
+                  >事件類型：</span
+                ><span class="font-bold text-teal-600"
+                  >{{ dashboardData.modalEvent.eventType }}</span
+                >
+              </p>
+              <p>
+                <span class="font-semibold text-slate-500 w-24 inline-block"
+                  >主要日期：</span
+                >{{ dashboardData.modalEvent.date }}
+              </p>
+              <p>
+                <span class="font-semibold text-slate-500 w-24 inline-block"
+                  >主要成員：</span
+                >{{
+                dashboardData.getMemberName(dashboardData.modalEvent.memberId)
+                }}
+              </p>
+              <div
+                v-if="dashboardData.modalEvent.eventType === '加班'"
+                class="flex items-center"
+              >
+                <label class="font-semibold text-slate-500 w-28 shrink-0"
+                  >加班時數：</label
+                >
+                <div class="flex-1">
+                  <input
+                    type="number"
+                    v-model.number="dashboardData.modalEvent.hours"
+                    class="p-2 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </div>
+              <div v-if="dashboardData.modalEvent.eventType === '代班'">
+                <div class="flex items-center gap-4 mb-4">
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      :value="false"
+                      v-model="dashboardData.modalEvent.isExternalSubstitute"
+                      class="form-radio text-teal-600"
+                    />
+                    內部成員</label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      :value="true"
+                      v-model="dashboardData.modalEvent.isExternalSubstitute"
+                      class="form-radio text-teal-600"
+                    />
+                    外部人員</label
+                  >
+                </div>
+                <custom-select
+                  v-if="!dashboardData.modalEvent.isExternalSubstitute"
+                  v-model="dashboardData.modalEvent.relatedMemberId"
+                  :options="eventsData.memberOptionsForFilter.value"
+                  placeholder="選擇內部代班成員"
+                  icon-class="fa-solid fa-users fa-fw"
+                ></custom-select>
+                <input
+                  v-else
+                  type="text"
+                  v-model.trim="dashboardData.modalEvent.externalSubstituteName"
+                  placeholder="輸入外部人員姓名"
+                  class="p-3 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div
+                v-if="dashboardData.modalEvent.eventType === '請假'"
+                class="flex items-center"
+              >
+                <label class="font-semibold text-slate-500 w-28 shrink-0"
+                  >假別：</label
+                >
+                <div class="flex-1">
+                  <custom-select
+                    v-model="dashboardData.modalEvent.reason"
+                    :options="dashboardData.leaveTypeOptions.value"
+                  ></custom-select>
+                </div>
+              </div>
+              <div
+                v-if="dashboardData.modalEvent.eventType === '請假' && dashboardData.modalEvent.reason === '事假'"
+                class="flex items-start"
+              >
+                <label class="font-semibold text-slate-500 w-28 shrink-0 pt-2"
+                  >事由：</label
+                >
+                <div class="flex-1">
+                  <textarea
+                    v-model.trim="dashboardData.modalEvent.description"
+                    class="p-2 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    rows="2"
+                  ></textarea>
+                </div>
+              </div>
+              <div
+                v-if="dashboardData.modalEvent.eventType === '請假' && dashboardData.isQuickEditHourlyLeave.value"
+                class="flex items-center"
+              >
+                <label class="font-semibold text-slate-500 w-28 shrink-0"
+                  >請假時數：</label
+                >
+                <div class="flex-1">
+                  <input
+                    type="number"
+                    v-model.number="dashboardData.modalEvent.hours"
+                    class="p-2 w-full border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </div>
+              <p v-if="dashboardData.modalEvent.eventType === '調班'">
+                <span class="font-semibold text-slate-500 w-24 inline-block"
+                  >交換對象：</span
+                >{{
+                dashboardData.getMemberName(dashboardData.modalEvent.relatedMemberId)
+                }}
+              </p>
+              <p
+                v-if="['調班','調假'].includes(dashboardData.modalEvent.eventType)"
+              >
+                <span class="font-semibold text-slate-500 w-24 inline-block"
+                  >交換日期：</span
+                >{{ dashboardData.modalEvent.relatedDate }}
+              </p>
+            </div>
+            <template #footer>
+              <div class="flex justify-end space-x-3">
+                <button
+                  @click="dashboardData.cancelQuickEdit"
+                  type="button"
+                  class="bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  @click="dashboardData.submitQuickEdit"
+                  type="button"
+                  class="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-700 text-sm"
+                >
+                  確認送出
+                </button>
+              </div>
+            </template>
+          </base-modal>
+
+          <!-- Modal：選擇代班類型 -->
+          <base-modal v-model="showSubstituteTypeModal" title="選擇代班類型">
+            <div class="px-0 pb-2 space-y-2">
+              <button
+                @click="dashboardData.startInternalSubstitute()"
+                type="button"
+                class="w-full flex items-center gap-3 py-3 px-4 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <i class="fa-solid fa-user-group fa-fw text-teal-600"></i
+                ><span class="font-semibold">由「內部成員」代班</span>
+              </button>
+              <button
+                @click="dashboardData.startExternalSubstitute()"
+                type="button"
+                class="w-full flex items-center gap-3 py-3 px-4 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <i class="fa-solid fa-user-plus fa-fw text-amber-500"></i
+                ><span class="font-semibold">由「外部人員」代班</span>
+              </button>
+            </div>
+            <template #footer>
+              <div class="flex justify-end">
+                <button
+                  @click="dashboardData.cancelQuickEdit"
+                  type="button"
+                  class="bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 text-sm"
+                >
+                  取消
+                </button>
+              </div>
+            </template>
+          </base-modal>
+        </template>
+      </div>
+    </div>
+
+    <!-- PWA Service Worker -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./service-worker.js").then(
+            (registration) =>
+              console.log(
+                "ServiceWorker registration successful with scope: ",
+                registration.scope
+              ),
+            (err) => console.log("ServiceWorker registration failed: ", err)
+          );
+        });
+      }
+    </script>
+    <!-- 應用程式入口 -->
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
