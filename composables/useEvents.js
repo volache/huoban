@@ -2,7 +2,7 @@
 
 const { ref, reactive, computed, watch } = Vue;
 import {
-  getEvents,
+  queryEvents,
   addEvent,
   updateEvent,
   deleteEvent,
@@ -14,6 +14,8 @@ import {
 } from "../utils/constants.js";
 import { fmtYMD } from "../utils/date.js";
 
+const PAGE_SIZE = 20;
+
 export function useEvents(isLoading, membersData) {
   const allEvents = ref([]);
   const showAddEventModal = ref(false);
@@ -21,6 +23,11 @@ export function useEvents(isLoading, membersData) {
   const showFilters = ref(false);
   const showEditEventModal = ref(false);
   const editingEvent = ref(null);
+
+  // Lazy loading state
+  const lastLoadedEventDoc = ref(null);
+  const hasMoreEventsToLoad = ref(true);
+  const isMoreLoading = ref(false);
 
   const newEventTemplate = () => ({
     date: fmtYMD(),
@@ -86,16 +93,65 @@ export function useEvents(isLoading, membersData) {
     leaveTypes.value.map((lt) => ({ value: lt, text: lt }))
   );
 
-  const loadEvents = async () => {
+  const loadInitialEvents = async () => {
     try {
-      const date = new Date();
-      date.setDate(date.getDate() - 30);
-      const startDate = fmtYMD(date);
-      allEvents.value = await getEvents(startDate);
+      allEvents.value = [];
+      lastLoadedEventDoc.value = null;
+      hasMoreEventsToLoad.value = true;
+      isMoreLoading.value = true;
+
+      const today = fmtYMD();
+
+      // 1. 取得所有未來事件
+      const futureResult = await queryEvents({
+        startDate: today,
+        orderDirection: "asc", // 未來事件由近到遠排序
+      });
+      // 未來事件是 asc，我們需要 reverse 成 desc 才能跟過去事件接在一起
+      const futureEvents = futureResult.events.reverse();
+
+      // 2. 取得最近的過去事件（第一頁）
+      const pastResult = await queryEvents({
+        endDate: today,
+        limit: PAGE_SIZE,
+      });
+
+      allEvents.value = [...futureEvents, ...pastResult.events];
+      lastLoadedEventDoc.value = pastResult.lastVisibleDoc;
+      hasMoreEventsToLoad.value = pastResult.events.length === PAGE_SIZE;
     } catch (e) {
-      console.error("載入事件失敗：", e);
+      console.error("載入初始事件失敗：", e);
       alert("事件資料載入失敗！");
+    } finally {
+      isMoreLoading.value = false;
     }
+  };
+
+  const loadMoreEvents = async () => {
+    if (isMoreLoading.value || !hasMoreEventsToLoad.value) return;
+
+    isMoreLoading.value = true;
+    try {
+      const result = await queryEvents({
+        endDate: fmtYMD(),
+        limit: PAGE_SIZE,
+        startAfterDoc: lastLoadedEventDoc.value,
+      });
+
+      allEvents.value.push(...result.events);
+      lastLoadedEventDoc.value = result.lastVisibleDoc;
+      hasMoreEventsToLoad.value = result.events.length === PAGE_SIZE;
+    } catch (error) {
+      console.error("載入更多事件失敗：", error);
+      alert("載入更多事件時發生錯誤。");
+    } finally {
+      isMoreLoading.value = false;
+    }
+  };
+
+  // 外部呼叫的統一入口
+  const loadEvents = async () => {
+    await loadInitialEvents();
   };
 
   const handleAddEvent = async () => {
@@ -140,7 +196,7 @@ export function useEvents(isLoading, membersData) {
       await addEvent(payload);
       showAddEventModal.value = false;
       Object.assign(newEvent, newEventTemplate());
-      await loadEvents();
+      await loadEvents(); // 重新載入事件列表
     } catch (e) {
       console.error("新增事件失敗：", e);
       alert("新增事件失敗！");
@@ -166,7 +222,7 @@ export function useEvents(isLoading, membersData) {
       const payload = { ...editingEvent.value };
       await updateEvent(payload.id, payload);
       showEditEventModal.value = false;
-      await loadEvents();
+      await loadEvents(); // 重新載入事件列表
       alert("事件已成功更新！");
     } catch (e) {
       console.error("更新事件失敗：", e);
@@ -181,7 +237,7 @@ export function useEvents(isLoading, membersData) {
     isLoading.value = true;
     try {
       await deleteEvent(eventId);
-      await loadEvents();
+      await loadEvents(); // 重新載入事件列表
     } catch (e) {
       console.error("刪除事件失敗：", e);
       alert("刪除事件失敗！");
@@ -269,11 +325,14 @@ export function useEvents(isLoading, membersData) {
     isHourlyLeave,
     showEditEventModal,
     editingEvent,
+    isMoreLoading,
+    hasMoreEventsToLoad,
     memberOptionsForFilter,
     eventTypeOptionsForFilter,
     leaveTypeOptions,
     filteredEvents,
     loadEvents,
+    loadMoreEvents,
     handleAddEvent,
     handleDeleteEvent,
     clearFilters,

@@ -1,12 +1,13 @@
 // /views/EventsView.js
 
-const { inject, ref } = Vue;
+const { inject, ref, onMounted, onBeforeUnmount } = Vue;
 
 export default {
   name: "EventsView",
   setup() {
     const eventsData = inject("events");
     const showFilters = ref(false);
+    const scrollContainer = ref(null);
 
     const openAddEvent = () => {
       if (eventsData) {
@@ -14,7 +15,24 @@ export default {
       }
     };
 
-    return { eventsData, showFilters, openAddEvent };
+    const handleScroll = () => {
+      if (!scrollContainer.value) return;
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainer.value;
+      // 提前 100px 觸發
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        eventsData.loadMoreEvents();
+      }
+    };
+
+    onMounted(() => {
+      scrollContainer.value?.addEventListener("scroll", handleScroll);
+    });
+
+    onBeforeUnmount(() => {
+      scrollContainer.value?.removeEventListener("scroll", handleScroll);
+    });
+
+    return { eventsData, showFilters, openAddEvent, scrollContainer };
   },
   template: `
     <div v-if="eventsData" class="flex flex-col h-full">
@@ -39,7 +57,7 @@ export default {
         />
       </transition>
 
-      <div class="flex-1 overflow-y-auto pr-2 -mr-2">
+      <div class="flex-1 overflow-y-auto pr-2 -mr-2" ref="scrollContainer">
         <transition-group v-if="eventsData.filteredEvents.value.length" tag="ul" name="list" class="space-y-3">
           <event-card
             v-for="event in eventsData.filteredEvents.value"
@@ -53,9 +71,18 @@ export default {
             {{ eventsData.formatEventDetails(event) }}
           </event-card>
         </transition-group>
-        <p v-else class="text-slate-500 text-center py-8">
-          {{ eventsData.eventFilter.memberId || eventsData.eventFilter.eventType ? '找不到符合條件的事件' : '近 30 天無事件紀錄' }}
+        <p v-else-if="!eventsData.isMoreLoading.value" class="text-slate-500 text-center py-8">
+          {{ eventsData.eventFilter.memberId || eventsData.eventFilter.eventType ? '找不到符合條件的事件' : '無事件紀錄' }}
         </p>
+        
+        <div v-if="eventsData.isMoreLoading.value" class="flex justify-center items-center py-4">
+          <i class="fa-solid fa-spinner fa-spin text-slate-500"></i>
+          <span class="ml-2 text-slate-500">載入中……</span>
+        </div>
+
+        <div v-if="!eventsData.hasMoreEventsToLoad.value && eventsData.filteredEvents.value.length > 0" class="text-center py-4 text-slate-400 text-sm">
+          已載入所有紀錄
+        </div>
       </div>
     </div>
   `,

@@ -1,6 +1,6 @@
 // /service-worker.js
 
-const CACHE_NAME = "huoban-cache-v1.0";
+const CACHE_NAME = "huoban-cache-v1.1";
 
 const urlsToCache = [
   "./",

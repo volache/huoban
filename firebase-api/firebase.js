@@ -1,4 +1,4 @@
-// /api/firebase.js
+// /firebase-api/firebase.js
 
 import { db } from "../firebase-config.js";
 import {
@@ -12,8 +12,11 @@ import {
   updateDoc,
   writeBatch,
   orderBy,
+  limit,
+  startAfter,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizeEventData } from "../utils/validators.js";
+import { fmtYMD } from "../utils/date.js";
 
 // ---------- Members ----------
 export async function getMembers() {
@@ -106,15 +109,84 @@ export async function batchUpdateSchedules(changes, originalSchedulesMap) {
 }
 
 // ---------- Events ----------
-export async function getEvents(startDate = null) {
+
+/**
+ * 通用的事件查詢函式
+ * @param {object} options 查詢選項
+ * @param {string} [options.startDate] 開始日期（YYYY-MM-DD）, inclusive
+ * @param {string} [options.endDate] 結束日期（YYYY-MM-DD）, inclusive
+ * @param {number} [options.limit] 查詢筆數
+ * @param {DocumentSnapshot} [options.startAfterDoc] 從哪個文件後開始查詢（分頁用）
+ * @param {'asc' | 'desc'} [options.orderDirection] 排序方向
+ * @returns {Promise<{events: Array, lastVisibleDoc: DocumentSnapshot|null}>}
+ */
+export async function queryEvents(options = {}) {
   const eventsCol = collection(db, "events");
-  const constraints = [orderBy("date", "desc")];
-  if (startDate) {
-    constraints.push(where("date", ">=", startDate));
+  const constraints = [];
+
+  if (options.startDate) {
+    constraints.push(where("date", ">=", options.startDate));
   }
+  if (options.endDate) {
+    constraints.push(where("date", "<=", options.endDate));
+  }
+
+  constraints.push(orderBy("date", options.orderDirection || "desc"));
+
+  if (options.limit) {
+    constraints.push(limit(options.limit));
+  }
+  if (options.startAfterDoc) {
+    constraints.push(startAfter(options.startAfterDoc));
+  }
+
   const qy = query(eventsCol, ...constraints);
   const snap = await getDocs(qy);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const events = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const lastVisibleDoc = snap.docs[snap.docs.length - 1] || null;
+
+  return { events, lastVisibleDoc };
+}
+
+export async function getEventsForMonth(year, month) {
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endDate = new Date(year, month, 0);
+  const endDateStr = fmtYMD(endDate);
+
+  // 為了包含調班、調假等相關日期，我們需要查詢更大的範圍
+  // 例如，查詢 11 月班表時，可能會有事件是 10-28 調到 11-05，或 11-28 調到 12-05
+  // 為簡單起見，我們擴大查詢範圍到前後一個月
+  const queryStartDate = new Date(year, month - 2, 1);
+  const queryEndDate = new Date(year, month, 0);
+
+  const eventsCol = collection(db, "events");
+  const qy = query(
+    eventsCol,
+    where("date", ">=", fmtYMD(queryStartDate)),
+    where("date", "<=", fmtYMD(queryEndDate))
+  );
+
+  const relatedQy = query(
+    eventsCol,
+    where("relatedDate", ">=", startDate),
+    where("relatedDate", "<=", endDateStr)
+  );
+
+  const [snap, relatedSnap] = await Promise.all([
+    getDocs(qy),
+    getDocs(relatedQy),
+  ]);
+
+  const eventsMap = new Map();
+  snap.docs.forEach((doc) =>
+    eventsMap.set(doc.id, { id: doc.id, ...doc.data() })
+  );
+  relatedSnap.docs.forEach((doc) =>
+    eventsMap.set(doc.id, { id: doc.id, ...doc.data() })
+  );
+
+  return Array.from(eventsMap.values());
 }
 
 export async function addEvent(eventData) {

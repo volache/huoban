@@ -5,6 +5,7 @@ import {
   getSchedulesForMonth,
   batchUpdateSchedules,
   addEvent as apiAddEvent,
+  getEventsForMonth,
 } from "../firebase-api/firebase.js";
 import { LEAVE_TYPES, LEAVE_TYPE_CONFIG } from "../utils/constants.js";
 import { fmtYMD, ymdOf, getDowShort } from "../utils/date.js";
@@ -28,7 +29,8 @@ export function useDashboard(isLoading, membersData, eventsData) {
   );
 
   const monthlyRawSchedules = ref([]),
-    scheduleChanges = reactive({}),
+    monthlyEvents = ref([]); // 獨立的事件儲存
+  const scheduleChanges = reactive({}),
     originalSchedulesMap = ref(new Map());
   const isBaseEditMode = ref(false),
     isQuickEditMode = ref(false),
@@ -86,15 +88,6 @@ export function useDashboard(isLoading, membersData, eventsData) {
     if (!activeTeam.value) return [];
     return membersData.members.value.filter(
       (m) => m.team === activeTeam.value && m.status === "在職"
-    );
-  });
-
-  const monthlyEvents = computed(() => {
-    const monthPrefix = `${year.value}-${String(month.value).padStart(2, "0")}`;
-    return eventsData.allEvents.value.filter(
-      (e) =>
-        e.date?.startsWith(monthPrefix) ||
-        (e.relatedDate && e.relatedDate.startsWith(monthPrefix))
     );
   });
 
@@ -264,7 +257,6 @@ export function useDashboard(isLoading, membersData, eventsData) {
     return result;
   });
 
-  // 匯出班表為 CSV 的函式
   const exportScheduleToCSV = () => {
     const members = filteredMembers.value;
     if (members.length === 0) {
@@ -272,11 +264,9 @@ export function useDashboard(isLoading, membersData, eventsData) {
       return;
     }
 
-    // 準備標頭
     const headers = ["日期", "星期", ...members.map((m) => m.name)];
     const data = [headers];
 
-    // 準備每一列的資料
     for (let day = 1; day <= daysInMonth.value; day++) {
       const dateStr = `${month.value}/${day}`;
       const dayOfWeek = getDayOfWeek(day);
@@ -285,7 +275,7 @@ export function useDashboard(isLoading, membersData, eventsData) {
       members.forEach((member) => {
         const cell = finalSchedule.value[day]?.[member.id];
         if (cell) {
-          let cellText = (cell.status || "").replace(/<br>/g, " "); // 將 HTML 換行符換成空格
+          let cellText = (cell.status || "").replace(/<br>/g, " ");
           if (cell.note) {
             cellText += ` (${(cell.note || "").replace(/<br>/g, " ")})`;
           }
@@ -330,14 +320,20 @@ export function useDashboard(isLoading, membersData, eventsData) {
     return "";
   });
 
-  const loadSchedules = async () => {
+  const loadDashboardData = async () => {
     if (!year.value || !month.value) return;
     try {
       Object.keys(scheduleChanges).forEach((k) => delete scheduleChanges[k]);
-      const data = await getSchedulesForMonth(year.value, month.value);
-      monthlyRawSchedules.value = data;
+      const [schedulesData, eventsDataResult] = await Promise.all([
+        getSchedulesForMonth(year.value, month.value),
+        getEventsForMonth(year.value, month.value),
+      ]);
+
+      monthlyRawSchedules.value = schedulesData;
+      monthlyEvents.value = eventsDataResult;
+
       const oMap = new Map();
-      data.forEach((s) =>
+      schedulesData.forEach((s) =>
         oMap.set(`${s.date}_${s.memberId}`, {
           id: s.id,
           shiftType: s.shiftType,
@@ -345,8 +341,8 @@ export function useDashboard(isLoading, membersData, eventsData) {
       );
       originalSchedulesMap.value = oMap;
     } catch (e) {
-      console.error("載入班表失敗：", e);
-      alert("班表資料載入失敗！");
+      console.error("載入班表或事件失敗：", e);
+      alert("班表或事件資料載入失敗！");
     }
   };
 
@@ -372,7 +368,7 @@ export function useDashboard(isLoading, membersData, eventsData) {
       await batchUpdateSchedules(scheduleChanges, originalSchedulesMap.value);
       alert("班表已成功儲存！");
       isBaseEditMode.value = false;
-      await loadSchedules();
+      await loadDashboardData();
     } catch (e) {
       console.error("儲存班表失敗：", e);
       alert("班表儲存失敗！");
@@ -649,7 +645,8 @@ export function useDashboard(isLoading, membersData, eventsData) {
         }
       }
       await apiAddEvent(payload);
-      if (eventsData) await eventsData.loadEvents();
+      // 同時刷新儀表板自身和全域事件列表
+      await Promise.all([loadDashboardData(), eventsData?.loadEvents()]);
       cancelQuickEdit();
     } catch (err) {
       console.error("submitQuickEdit error:", err);
@@ -750,7 +747,7 @@ export function useDashboard(isLoading, membersData, eventsData) {
     },
     { deep: true, flush: "post" }
   );
-  watch([year, month], loadSchedules);
+  watch([year, month], loadDashboardData);
 
   return {
     year,
@@ -768,7 +765,7 @@ export function useDashboard(isLoading, membersData, eventsData) {
     scheduleTableBody,
     scrollContainer,
     tableHeader,
-    loadSchedules,
+    loadSchedules: loadDashboardData, // 對外暴露的名稱維持不變
     goToPreviousMonth,
     goToNextMonth,
     saveChanges,
@@ -793,5 +790,6 @@ export function useDashboard(isLoading, membersData, eventsData) {
     showQuickEditModal,
     showSubstituteTypeModal,
     modalEvent,
+    monthlyEvents, // 傳遞給 Quotas 計算用
   };
 }

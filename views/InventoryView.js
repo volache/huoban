@@ -212,7 +212,7 @@ export default {
       <div>
         <div class="relative">
           <i class="fa-solid fa-search text-slate-400 absolute top-1/2 left-3 -translate-y-1/2"></i>
-          <input v-model.trim="inventory.searchQuery.value" type="text" placeholder="搜尋物品名稱..."
+          <input v-model.trim="inventory.searchQuery.value" type="text" placeholder="搜尋物品名稱⋯⋯"
                 class="w-full p-2 pl-9 border rounded-lg bg-white" />
         </div>
         <p class="text-xs text-slate-500 text-right mt-1 pr-1">共 {{ filteredInventories.length }} 項物品</p>
